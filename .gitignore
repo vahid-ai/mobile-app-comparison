@@ -9,5 +9,6 @@ zig-out/
 .cxx/
 local.properties
 samples/zero-native/desktop/frontend/node_modules/
+samples/zero-native/desktop/frontend/dist/
 samples/zero-native/desktop/.zig-cache/
 samples/zero-native/desktop/zig-out/
