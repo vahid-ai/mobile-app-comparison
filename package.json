@@ -1,0 +1,26 @@
+{
+  "name": "mobile-app-comparison",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Comparing different frameworks for building mobile apps",
+  "scripts": {
+    "postinstall": "chmod +x scripts/*.sh",
+    "zn:ensure": "bash scripts/ensure-zero-native.sh",
+    "zn:test": "bash scripts/test-zero-native.sh",
+    "zn:android:lib": "bash scripts/build-android-lib.sh",
+    "zn:android:apk": "bash scripts/build-android-apk.sh",
+    "zn:desktop:test": "bash -lc 'source scripts/ensure-toolchain.sh && cd samples/zero-native/desktop && zig build test'",
+    "zn:desktop:run": "bash -lc 'source scripts/ensure-toolchain.sh && cd samples/zero-native/desktop && zig build run -Dplatform=linux'",
+    "test": "npm run zn:test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vahid-ai/mobile-app-comparison.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "zero-native": "^0.2.0"
+  }
+}
