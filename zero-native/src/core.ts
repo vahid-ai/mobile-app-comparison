@@ -368,8 +368,7 @@ function rsvpOf(model: Model, id: number): Rsvp {
 function toggleRsvp(model: Model, id: number, status: Rsvp): Model {
   const current = rsvpOf(model, id);
   const next: Rsvp = current === status ? "none" : status;
-  const existing = model.rsvps.find((r) => r.id === id);
-  if (existing === undefined) {
+  if (!model.rsvps.some((r) => r.id === id)) {
     const rsvps: readonly RsvpEntry[] = [...model.rsvps, { id: id, status: next }];
     return { ...model, rsvps: rsvps };
   }
@@ -417,8 +416,7 @@ export function update(model: Model, msg: Msg): Model {
       return toggleRsvp(model, model.selectedId, "interested");
     case "toggle_follow": {
       const id = model.selectedId;
-      const existing = model.follows.find((f) => f.id === id);
-      if (existing === undefined) {
+      if (!model.follows.some((f) => f.id === id)) {
         const follows: readonly FollowEntry[] = [...model.follows, { id: id, on: true }];
         return { ...model, follows: follows };
       }
@@ -579,19 +577,41 @@ export interface CalCell {
   readonly blank: boolean;
   readonly selected: boolean;
   readonly dot: boolean;
+  readonly label: Bytes; // accessible day name for the dotted-day cell
 }
 
 export function calCells(model: Model): readonly CalCell[] {
   const cells: CalCell[] = [];
   for (let i = 0; i < 3; i++) {
-    cells.push({ key: i, day: 0, blank: true, selected: false, dot: false });
+    cells.push({
+      key: i,
+      day: 0,
+      blank: true,
+      selected: false,
+      dot: false,
+      label: asciiBytes(""),
+    });
   }
   for (let d = 1; d <= 31; d++) {
     const sel = d === model.selectedDay;
     const has = EVENTS.some((e) => e.day === d);
-    cells.push({ key: 3 + d, day: d, blank: false, selected: sel, dot: has && !sel });
+    cells.push({
+      key: 3 + d,
+      day: d,
+      blank: false,
+      selected: sel,
+      dot: has && !sel,
+      label: asciiBytes(`July ${d}`),
+    });
   }
-  cells.push({ key: 40, day: 0, blank: true, selected: false, dot: false });
+  cells.push({
+    key: 40,
+    day: 0,
+    blank: true,
+    selected: false,
+    dot: false,
+    label: asciiBytes(""),
+  });
   return cells;
 }
 
