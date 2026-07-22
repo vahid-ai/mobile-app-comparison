@@ -168,7 +168,7 @@
               </if>
               <else>
                 <if test="{c.dot}">
-                  <panel background="surface" radius="md" on-press="pick_day:{c.day}" label="{c.day}">
+                  <panel background="surface" radius="md" on-press="pick_day:{c.day}" label="{c.label}">
                     <column main="center" cross="center" gap="2" padding="4">
                       <text>{c.day}</text>
                       <icon name="circle-dot" width="8" height="8" foreground="accent" />

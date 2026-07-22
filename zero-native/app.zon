@@ -4,7 +4,7 @@
     .display_name = "Pulse Events",
     .description = "Pulse Events - a nightlife discovery app (Discover, Map, Calendar, Profile, Event detail), built as a Zero Native app.",
     .version = "0.1.0",
-    .platforms = .{"macos"},
+    .platforms = .{ "macos", "android" },
     .permissions = .{"view"},
     .capabilities = .{ "native_views", "gpu_surfaces" },
     // The Geist pack with the design's Pulse orange-red as the one-accent
