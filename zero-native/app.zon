@@ -1,0 +1,40 @@
+.{
+    .id = "dev.pulse.events",
+    .name = "pulse-events",
+    .display_name = "Pulse Events",
+    .description = "Pulse Events - a nightlife discovery app (Discover, Map, Calendar, Profile, Event detail), built as a Zero Native app.",
+    .version = "0.1.0",
+    .platforms = .{"macos"},
+    .permissions = .{"view"},
+    .capabilities = .{ "native_views", "gpu_surfaces" },
+    // The Geist pack with the design's Pulse orange-red as the one-accent
+    // brand override; light/dark follows the OS appearance.
+    .theme = "geist",
+    .theme_accent = "#ff5a2b",
+    .shell = .{
+        .windows = .{
+            .{
+                .label = "main",
+                .title = "Pulse Events",
+                // Phone-shaped window, matching the design's 390x844 frame.
+                .width = 390,
+                .height = 844,
+                .min_width = 390,
+                .min_height = 700,
+                .restore_state = false,
+                .restore_policy = "center_on_primary",
+                .views = .{
+                    .{ .label = "main-canvas", .kind = "gpu_surface", .fill = true, .role = "Pulse Events canvas", .accessibility_label = "Pulse Events", .gpu_backend = "metal", .gpu_pixel_format = "bgra8_unorm", .gpu_present_mode = "timer", .gpu_alpha_mode = "opaque", .gpu_color_space = "srgb", .gpu_vsync = true },
+                },
+            },
+        },
+    },
+    .security = .{
+        .navigation = .{
+            .allowed_origins = .{ "zero://app", "zero://inline" },
+            .external_links = .{ .action = "deny" },
+        },
+    },
+    .web_engine = "system",
+    .cef = .{ .dir = "third_party/cef/macos", .auto_install = false },
+}
