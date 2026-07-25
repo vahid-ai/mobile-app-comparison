@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "Pulse Events",
+    "slug": "pulse-events",
+    "scheme": "pulse",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "primaryColor": "#ff5a2b",
+    "ios": {
+      "bundleIdentifier": "dev.pulse.events",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "dev.pulse.events",
+      "adaptiveIcon": {
+        "backgroundColor": "#ff5a2b",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "comment": "The seed generator runs on Node, not on Workers — the two type sets (@types/node and @cloudflare/workers-types) redeclare the same globals, so they get separate configs.",
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2022"],
+    "module": "es2022",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": ["scripts/**/*.ts", "../src/core/**/*.ts"]
+}
