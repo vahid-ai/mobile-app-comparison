@@ -105,45 +105,55 @@ runs on every push and pull request that touches this directory:
 - **publish** — `eas update`, and on a pull request a QR-code comment
   pointing at that update.
 
-`publish` needs two things that only the repo owner can provide. Until both
-exist the job exits **green** with instructions in its step summary rather
-than failing:
+The EAS project is already wired up in `app.json`:
 
-1. A token from <https://expo.dev/settings/access-tokens>, added as a
-   repository secret named `EXPO_TOKEN`.
-2. An EAS project id. Run once, locally, from this directory:
+```jsonc
+"runtimeVersion": { "policy": "sdkVersion" },
+"updates": { "url": "https://u.expo.dev/5289f214-1136-42b1-ab61-41318a9aad10" },
+"extra": { "eas": { "projectId": "5289f214-1136-42b1-ab61-41318a9aad10" } }
+```
 
-   ```sh
-   npx eas init             # writes extra.eas.projectId into app.json
-   npx eas update:configure # writes updates.url and runtimeVersion
-   ```
+So `publish` needs exactly one more thing: a token from
+<https://expo.dev/settings/access-tokens>, added as a repository secret named
+`EXPO_TOKEN`. Until it exists the job exits **green** with instructions in its
+step summary rather than failing.
 
-   Then commit the `app.json` changes.
+### Why `sdkVersion` and not `appVersion`
 
-### The Expo Go caveat
+`runtimeVersion` is what ties an update to a native runtime, and it decides
+whether Expo Go will load what CI publishes:
 
-Expo's docs are explicit that [updates published with a `runtimeVersion`
-cannot be loaded in Expo Go][eas-go] — that field is what ties an update to a
-native runtime, and Expo Go's runtime is its own. The supported target for
-`eas update` is a **development build**:
+- **`sdkVersion`** (used here) resolves to `exposdk:57.0.0` — the runtime
+  Expo Go itself reports. This is the policy that targets Expo Go.
+- **`appVersion`** — what `eas update:configure` writes by default — resolves
+  to `0.1.0`, which only a build of this app carrying that version will
+  accept. Correct for production, wrong for Expo Go.
+
+Expo's docs push toward a [development build][eas-go] rather than Expo Go,
+and that path is the guaranteed one:
 
 ```sh
 npx eas build --profile development --platform ios     # or android
 ```
 
-Install that once, and every subsequent `eas update` — including every one
-this workflow publishes — arrives over the air, which is the behaviour the
-"send it to my phone" automation is really after. `eas.json` already carries
-that `development` profile.
+Install that once and every `eas update` — including every one this workflow
+publishes — arrives over the air. `eas.json` already carries the
+`development` profile for it.
 
-So: the QR comment on a pull request may open in Expo Go, depending on how
-the runtime version resolves, but a development build is the path that is
-guaranteed to work. I could not test either end-to-end from the environment
-this was built in — there is no Expo account wired up here and no device —
-so treat the publish job as written-but-unproven until its first real run.
+**Unverified:** the Expo Go path could not be tested from the environment
+this was built in — `api.expo.dev` is blocked by its network policy and there
+is no device here, so `eas update` has never actually run. If the first real
+run rejects the `sdkVersion` policy (it is the oldest of the four and Expo
+has been steering away from it), switch to `appVersion` and use the
+development build above. That is a one-line change to `app.json`.
 
-The classic `expo publish`, which did put a JS bundle in Expo Go behind a
-permanent URL, was removed in SDK 50; there is no current equivalent.
+Also unverified: that this repo's slug (`pulse-events`) matches the slug of
+project `5289f214…` on Expo's side. A mismatch makes `eas update` fail with a
+slug error; the fix is to align the `slug` field.
+
+The classic `expo publish`, which put a JS bundle in Expo Go behind a
+permanent URL with none of this ceremony, was removed in SDK 50 and has no
+current equivalent.
 
 [eas-go]: https://docs.expo.dev/eas-update/runtime-versions/
 

@@ -8,6 +8,12 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "primaryColor": "#ff5a2b",
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/5289f214-1136-42b1-ab61-41318a9aad10"
+    },
     "ios": {
       "bundleIdentifier": "dev.pulse.events",
       "supportsTablet": false
@@ -24,6 +30,11 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "5289f214-1136-42b1-ab61-41318a9aad10"
+      }
     }
   }
 }
