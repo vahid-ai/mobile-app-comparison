@@ -44,6 +44,7 @@ src/
   screens/     one file per screen, transcribed from app.native
   theme/       the design tokens app.zon declares
 server/        the Cloudflare Worker and its D1 schema + seed
+eas.json       EAS build profiles (see "Getting it onto a phone")
 ```
 
 ### The core is still a pure loop
@@ -81,6 +82,70 @@ echo 'EXPO_PUBLIC_PULSE_API=https://pulse-events-api.<your-subdomain>.workers.de
 See [`server/README.md`](server/README.md) for deploying the Worker. The D1
 database is already provisioned and seeded (`pulse-events`,
 `24136797-e613-46a8-b3f9-4e627b2bcb5c`); only `wrangler deploy` is left.
+
+## Getting it onto a phone
+
+### Right now, no account needed
+
+```sh
+npm start          # scan the QR with Expo Go
+```
+
+Every dependency this app uses — `expo-status-bar`, `react-native-svg`,
+`react-native-safe-area-context`, and `lucide-react-native` on top of them —
+ships inside Expo Go, so nothing here needs a custom native build.
+
+### From CI
+
+[`.github/workflows/expo-preview.yml`](../.github/workflows/expo-preview.yml)
+runs on every push and pull request that touches this directory:
+
+- **verify** — typecheck, the 32 parity tests, and a Metro bundle for both
+  iOS and Android. No secrets, so it runs on fork pull requests too.
+- **publish** — `eas update`, and on a pull request a QR-code comment
+  pointing at that update.
+
+`publish` needs two things that only the repo owner can provide. Until both
+exist the job exits **green** with instructions in its step summary rather
+than failing:
+
+1. A token from <https://expo.dev/settings/access-tokens>, added as a
+   repository secret named `EXPO_TOKEN`.
+2. An EAS project id. Run once, locally, from this directory:
+
+   ```sh
+   npx eas init             # writes extra.eas.projectId into app.json
+   npx eas update:configure # writes updates.url and runtimeVersion
+   ```
+
+   Then commit the `app.json` changes.
+
+### The Expo Go caveat
+
+Expo's docs are explicit that [updates published with a `runtimeVersion`
+cannot be loaded in Expo Go][eas-go] — that field is what ties an update to a
+native runtime, and Expo Go's runtime is its own. The supported target for
+`eas update` is a **development build**:
+
+```sh
+npx eas build --profile development --platform ios     # or android
+```
+
+Install that once, and every subsequent `eas update` — including every one
+this workflow publishes — arrives over the air, which is the behaviour the
+"send it to my phone" automation is really after. `eas.json` already carries
+that `development` profile.
+
+So: the QR comment on a pull request may open in Expo Go, depending on how
+the runtime version resolves, but a development build is the path that is
+guaranteed to work. I could not test either end-to-end from the environment
+this was built in — there is no Expo account wired up here and no device —
+so treat the publish job as written-but-unproven until its first real run.
+
+The classic `expo publish`, which did put a JS bundle in Expo Go behind a
+permanent URL, was removed in SDK 50; there is no current equivalent.
+
+[eas-go]: https://docs.expo.dev/eas-update/runtime-versions/
 
 ## Verified in this tree
 
