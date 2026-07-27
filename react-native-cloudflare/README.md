@@ -145,10 +145,17 @@ has to match the slug of EAS project `5289f214…`; `eas update` refuses to run
 on a mismatch. The Cloudflare Worker (`pulse-events-api`) and the D1 database
 (`pulse-events`) are unrelated names and keep theirs.
 
-**Still unverified:** whether an update published under the `sdkVersion`
-policy actually opens in Expo Go — that needs a device, and there is none in
-the environment this was built in. If it does not, install the development
-build above; every published update lands there over the air.
+**Confirmed by the first real run:** eas-cli 21.3.0 accepts the `sdkVersion`
+policy, and the published update is tagged `runtimeVersion: exposdk:57.0.0`
+for both iOS and Android — the runtime Expo Go reports for itself.
+
+**Still unverified:** whether Expo Go actually *opens* that update. That
+needs a device, and there is none in the environment this was built in. Scan
+the QR in the pull request comment to find out; if it refuses, install the
+development build above and every published update lands there over the air.
+
+Updates from a pull request go to the EAS branch `pr-<number>`, and pushes to
+`main` go to a branch of the same name.
 
 The classic `expo publish`, which put a JS bundle in Expo Go behind a
 permanent URL with none of this ceremony, was removed in SDK 50 and has no

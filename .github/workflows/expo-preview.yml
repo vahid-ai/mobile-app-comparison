@@ -148,24 +148,38 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      # On a PR: publish to a branch named after the PR head and comment
-      # with a QR code. `--auto` takes the branch from git and the message
-      # from the commit.
+      # On a PR: publish to a per-PR branch and comment with a QR code.
+      #
+      # Not `--auto`: it reads the branch name from git, and `actions/checkout`
+      # leaves a PR build on a detached HEAD, so every PR's updates landed on
+      # one EAS branch literally named "HEAD". `pr-<number>` is deterministic,
+      # always a valid branch name, and keeps each PR's updates together.
       - name: Publish preview and comment
         if: steps.preflight.outputs.ready == 'true' && github.event_name == 'pull_request'
         uses: expo/expo-github-action/preview@v8
         with:
           working-directory: react-native-cloudflare
-          command: eas update --auto --non-interactive
+          command: >-
+            eas update
+            --branch pr-${{ github.event.pull_request.number }}
+            --message "PR #${{ github.event.pull_request.number }} @ ${{ github.event.pull_request.head.sha }}"
+            --non-interactive
 
       # On a push to main or a manual run: publish, no comment to write to.
+      # Same reason as above for naming the branch explicitly — checkout
+      # leaves a detached HEAD here too.
       - name: Publish
         if: steps.preflight.outputs.ready == 'true' && github.event_name != 'pull_request'
+        env:
+          COMMIT_SHA: ${{ github.sha }}
         run: |
-          eas update --auto --non-interactive
+          eas update \
+            --branch "${GITHUB_REF_NAME}" \
+            --message "${GITHUB_REF_NAME} @ ${COMMIT_SHA}" \
+            --non-interactive
           {
             echo "### Published"
             echo
-            echo "Branch \`${GITHUB_REF_NAME}\` — open it from the project's"
-            echo "[updates dashboard](https://expo.dev/accounts)."
+            echo "EAS branch \`${GITHUB_REF_NAME}\`, runtime \`exposdk:57.0.0\` —"
+            echo "open it from the [project's updates](https://expo.dev/projects)."
           } >> "$GITHUB_STEP_SUMMARY"
