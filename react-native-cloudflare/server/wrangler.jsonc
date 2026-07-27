@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "pulse-events-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-25",
+  "observability": {
+    "enabled": true
+  },
+  // The database this repo provisioned. A database id is an account-scoped
+  // identifier, not a secret — it is useless without credentials.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "pulse-events",
+      "database_id": "24136797-e613-46a8-b3f9-4e627b2bcb5c"
+    }
+  ]
+}

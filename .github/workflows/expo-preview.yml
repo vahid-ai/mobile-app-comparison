@@ -1,0 +1,185 @@
+# Publishes the React Native app so it can be opened on a phone.
+#
+# Two jobs:
+#   verify   always runs — typecheck, the 32 core parity tests, and a Metro
+#            bundle for both iOS and Android. This is the gate; it needs no
+#            secrets, so it also runs on pull requests from forks.
+#   publish  runs after verify, on pushes and same-repo pull requests. It
+#            publishes an EAS Update and, on a PR, comments with a QR code
+#            pointing at that update.
+#
+# `publish` needs an EXPO_TOKEN secret and an EAS project id. Until both
+# exist it exits green with instructions rather than failing the build — see
+# react-native-cloudflare/README.md, "Getting it onto a phone".
+
+name: Expo preview
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'react-native-cloudflare/**'
+      - '.github/workflows/expo-preview.yml'
+  pull_request:
+    paths:
+      - 'react-native-cloudflare/**'
+      - '.github/workflows/expo-preview.yml'
+  workflow_dispatch:
+
+# One run per branch; a new push supersedes an in-flight one.
+concurrency:
+  group: expo-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: react-native-cloudflare
+
+jobs:
+  verify:
+    name: Typecheck, test, bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: react-native-cloudflare/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Core parity tests
+        run: npm test
+
+      # The real proof the app builds for both platforms. It is also what
+      # `eas update` does to produce a bundle, so a failure here would fail
+      # the publish anyway — better to catch it in the gate.
+      - name: Bundle for iOS and Android
+        run: npx expo export --platform ios --platform android --output-dir /tmp/expo-export
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo "### Verify"
+            echo
+            echo "- typecheck, 32 parity tests, and a Metro bundle for both platforms"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: Publish EAS Update
+    needs: verify
+    runs-on: ubuntu-latest
+    # Secrets are not exposed to pull requests from forks, so publishing
+    # there would fail. Fork PRs still get the `verify` job above.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      # expo-github-action/preview writes the QR-code comment.
+      pull-requests: write
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Both prerequisites are things only the repo owner can supply, so
+      # report precisely which one is missing instead of failing opaquely.
+      - name: Check prerequisites
+        id: preflight
+        run: |
+          ready=true
+
+          if [ -z "${EXPO_TOKEN}" ]; then
+            echo "::notice title=EXPO_TOKEN not set::Skipping publish."
+            {
+              echo "### Publish skipped — no \`EXPO_TOKEN\`"
+              echo
+              echo "1. Create a token at <https://expo.dev/settings/access-tokens>"
+              echo "2. Add it as a repository secret named \`EXPO_TOKEN\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            ready=false
+          fi
+
+          if ! node -e "
+            const app = require('./app.json');
+            const id = app.expo?.extra?.eas?.projectId;
+            if (!id) process.exit(1);
+          " 2>/dev/null; then
+            echo "::notice title=No EAS project id::Skipping publish."
+            {
+              echo "### Publish skipped — app.json has no EAS project id"
+              echo
+              echo "Run once, locally, from \`react-native-cloudflare/\`:"
+              echo
+              echo '```sh'
+              echo "npx eas init            # writes extra.eas.projectId"
+              echo "npx eas update:configure # writes updates.url + runtimeVersion"
+              echo '```'
+              echo
+              echo "Then commit the \`app.json\` changes."
+            } >> "$GITHUB_STEP_SUMMARY"
+            ready=false
+          fi
+
+          echo "ready=${ready}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        if: steps.preflight.outputs.ready == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: react-native-cloudflare/package-lock.json
+
+      - name: Install
+        if: steps.preflight.outputs.ready == 'true'
+        run: npm ci
+
+      - uses: expo/expo-github-action@v8
+        if: steps.preflight.outputs.ready == 'true'
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      # On a PR: publish to a per-PR branch and comment with a QR code.
+      #
+      # Not `--auto`: it reads the branch name from git, and `actions/checkout`
+      # leaves a PR build on a detached HEAD, so every PR's updates landed on
+      # one EAS branch literally named "HEAD". `pr-<number>` is deterministic,
+      # always a valid branch name, and keeps each PR's updates together.
+      - name: Publish preview and comment
+        if: steps.preflight.outputs.ready == 'true' && github.event_name == 'pull_request'
+        uses: expo/expo-github-action/preview@v8
+        with:
+          working-directory: react-native-cloudflare
+          command: >-
+            eas update
+            --branch pr-${{ github.event.pull_request.number }}
+            --message "PR #${{ github.event.pull_request.number }} @ ${{ github.event.pull_request.head.sha }}"
+            --non-interactive
+
+      # On a push to main or a manual run: publish, no comment to write to.
+      # Same reason as above for naming the branch explicitly — checkout
+      # leaves a detached HEAD here too.
+      - name: Publish
+        if: steps.preflight.outputs.ready == 'true' && github.event_name != 'pull_request'
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          eas update \
+            --branch "${GITHUB_REF_NAME}" \
+            --message "${GITHUB_REF_NAME} @ ${COMMIT_SHA}" \
+            --non-interactive
+          {
+            echo "### Published"
+            echo
+            echo "EAS branch \`${GITHUB_REF_NAME}\`, runtime \`exposdk:57.0.0\` —"
+            echo "open it from the [project's updates](https://expo.dev/projects)."
+          } >> "$GITHUB_STEP_SUMMARY"
