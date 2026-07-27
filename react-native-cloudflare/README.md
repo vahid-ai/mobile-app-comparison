@@ -118,6 +118,34 @@ So `publish` needs exactly one more thing: a token from
 `EXPO_TOKEN`. Until it exists the job exits **green** with instructions in its
 step summary rather than failing.
 
+### Android dev builds — the `android` branch
+
+`android` is a long-lived integration branch for Android work. Opening a pull
+request **into** it runs
+[`.github/workflows/android-dev-build.yml`](../.github/workflows/android-dev-build.yml):
+
+1. **gate** — typecheck and the parity tests. Cheap, and it runs first so a
+   broken commit never spends an EAS build.
+2. **build** — `eas build --platform android --profile development`, waits for
+   it, downloads the APK, and publishes it as a **prerelease** tagged
+   `android-dev-pr<number>-<run>` with the APK attached. The download link is
+   commented on the pull request.
+
+Install that APK once on a device or emulator and it becomes a target for
+every `eas update` the preview workflow publishes — no rebuild needed for JS
+changes. That is the whole point of a development build, and it is the
+guaranteed path if Expo Go will not open an update.
+
+Two things worth knowing before the first run:
+
+- **EAS builds are metered and slow.** Expect 15-30 minutes including queue
+  time, against your plan's monthly build allowance. The `gate` job exists to
+  avoid wasting them.
+- **Android signing.** The first build needs a keystore. EAS generates one on
+  demand, but older CLI versions refused to do that with `--non-interactive`.
+  If the build step fails on credentials, run `npx eas credentials -p android`
+  once locally to create it; every later CI build reuses it.
+
 ### Why `sdkVersion` and not `appVersion`
 
 `runtimeVersion` is what ties an update to a native runtime, and it decides

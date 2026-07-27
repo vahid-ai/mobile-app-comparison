@@ -10,7 +10,13 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "channel": "development"
+      "channel": "development",
+      // Internal distribution already yields an APK on Android; stating it
+      // means the CI job that attaches the artifact to a GitHub release can
+      // rely on the extension rather than hope for it.
+      "android": {
+        "buildType": "apk"
+      }
     },
     "preview": {
       "distribution": "internal",

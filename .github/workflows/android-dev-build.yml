@@ -1,0 +1,198 @@
+# Builds a development Android APK on EAS for every pull request into the
+# `android` branch, and attaches the APK to a GitHub release.
+#
+#   gate    typecheck + the core parity tests. Cheap, and it runs first so a
+#           broken commit never spends an EAS build (they are slow and the
+#           free tier is metered).
+#   build   `eas build --profile development --platform android`, waits for
+#           it, downloads the APK, publishes it as a prerelease tagged
+#           `android-dev-pr<N>-<run>`, and comments the link on the PR.
+#
+# Installing that APK once turns the phone into a target for every
+# `eas update` the preview workflow publishes — see
+# react-native-cloudflare/README.md, "Getting it onto a phone".
+
+name: Android dev build
+
+on:
+  pull_request:
+    branches: [android]
+  workflow_dispatch:
+
+concurrency:
+  group: android-dev-build-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: react-native-cloudflare
+
+jobs:
+  gate:
+    name: Typecheck and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: react-native-cloudflare/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Core parity tests
+        run: npm test
+
+  build:
+    name: EAS build and release
+    needs: gate
+    runs-on: ubuntu-latest
+    # An Android build on EAS routinely takes 15-30 minutes in the queue plus
+    # the build itself.
+    timeout-minutes: 90
+    # Secrets are not exposed to pull requests from forks.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      # Creating the release and its tag.
+      contents: write
+      # Commenting the download link on the pull request.
+      pull-requests: write
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check prerequisites
+        id: preflight
+        run: |
+          if [ -z "${EXPO_TOKEN}" ]; then
+            echo "::notice title=EXPO_TOKEN not set::Skipping the Android build."
+            {
+              echo "### Build skipped — no \`EXPO_TOKEN\`"
+              echo
+              echo "Add a token from <https://expo.dev/settings/access-tokens>"
+              echo "as a repository secret named \`EXPO_TOKEN\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.preflight.outputs.ready == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: react-native-cloudflare/package-lock.json
+
+      - name: Install
+        if: steps.preflight.outputs.ready == 'true'
+        run: npm ci
+
+      - uses: expo/expo-github-action@v8
+        if: steps.preflight.outputs.ready == 'true'
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      # `--wait` blocks until the build finishes; `--json` makes the result
+      # machine-readable. Without an existing Android keystore EAS generates
+      # one, which older CLIs refused to do non-interactively — if this step
+      # fails on credentials, run `eas credentials -p android` once locally.
+      - name: Build APK on EAS
+        if: steps.preflight.outputs.ready == 'true'
+        run: |
+          set -o pipefail
+          eas build \
+            --platform android \
+            --profile development \
+            --non-interactive \
+            --wait \
+            --json > build.json
+          echo "--- eas build result ---"
+          cat build.json
+
+      - name: Download the APK
+        id: apk
+        if: steps.preflight.outputs.ready == 'true'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || github.run_number }}
+        run: |
+          # `eas build --json` returns an array of builds; the archive key has
+          # changed name across CLI versions, so accept either.
+          url=$(node -e "
+            const builds = JSON.parse(require('fs').readFileSync('build.json', 'utf8'));
+            const build = Array.isArray(builds) ? builds[0] : builds;
+            const a = build?.artifacts ?? {};
+            const url = a.applicationArchiveUrl ?? a.buildUrl ?? build?.artifacts?.apkUrl;
+            if (!url) {
+              console.error('no artifact URL in build.json');
+              process.exit(1);
+            }
+            console.log(url);
+          ")
+          name="pulse-events-dev-pr${PR_NUMBER}.apk"
+          echo "Downloading ${url}"
+          curl -fsSL "$url" -o "$name"
+          ls -lh "$name"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+          echo "path=react-native-cloudflare/${name}" >> "$GITHUB_OUTPUT"
+
+      # `gh` is preinstalled on GitHub runners. The tag carries the run number
+      # so a re-run of the same PR does not collide with an existing release.
+      - name: Publish the release
+        id: release
+        if: steps.preflight.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.run_number }}
+          TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          APK: ${{ steps.apk.outputs.name }}
+        run: |
+          tag="android-dev-pr${PR_NUMBER}-${GITHUB_RUN_NUMBER}"
+
+          # A notes file rather than an inline string: the YAML block scalar
+          # would otherwise bake its own indentation into the release body.
+          {
+            printf 'Development build (`developmentClient: true`, internal distribution) of `%s`.\n\n' "$TARGET_SHA"
+            printf 'Install the APK on a device or emulator; every `eas update` published for this project then arrives in it over the air.\n'
+          } > notes.md
+
+          gh release create "$tag" "$APK" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$TARGET_SHA" \
+            --title "Android dev build — PR #${PR_NUMBER}" \
+            --prerelease \
+            --notes-file notes.md
+          url=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url --jq .url)
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Android dev build"
+            echo
+            echo "- APK: \`${APK}\`"
+            echo "- Release: ${url}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment the download link
+        if: steps.preflight.outputs.ready == 'true' && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RELEASE_URL: ${{ steps.release.outputs.url }}
+          APK: ${{ steps.apk.outputs.name }}
+        run: |
+          {
+            printf '🤖 **Android dev build ready**\n\n'
+            printf '`%s` is attached to [%s](%s).\n\n' "$APK" "${RELEASE_URL##*/}" "$RELEASE_URL"
+            printf 'Install it on a device or emulator; every `eas update` for this project then arrives over the air.\n'
+          } > comment.md
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file comment.md
