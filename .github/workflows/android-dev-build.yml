@@ -49,6 +49,28 @@ jobs:
       - name: Core parity tests
         run: npm test
 
+      # `developmentClient: true` requires expo-dev-client to be a dependency;
+      # without it `eas build` bails after setup, which is a slow way to learn
+      # about a one-line problem.
+      - name: Check the development profile's dependencies
+        run: |
+          node -e "
+            const fs = require('fs');
+            const eas = JSON.parse(
+              fs.readFileSync('eas.json', 'utf8').replace(/^\s*\/\/.*\$/gm, ''),
+            );
+            const pkg = require('./package.json');
+            const profile = eas.build?.development ?? {};
+            if (profile.developmentClient && !pkg.dependencies?.['expo-dev-client']) {
+              console.error(
+                'eas.json sets developmentClient: true but expo-dev-client is not a dependency.\n' +
+                'Run: npx expo install expo-dev-client',
+              );
+              process.exit(1);
+            }
+            console.log('development profile OK');
+          "
+
   build:
     name: EAS build and release
     needs: gate
