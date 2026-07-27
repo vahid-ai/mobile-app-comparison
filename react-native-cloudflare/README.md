@@ -140,16 +140,15 @@ Install that once and every `eas update` — including every one this workflow
 publishes — arrives over the air. `eas.json` already carries the
 `development` profile for it.
 
-**Unverified:** the Expo Go path could not be tested from the environment
-this was built in — `api.expo.dev` is blocked by its network policy and there
-is no device here, so `eas update` has never actually run. If the first real
-run rejects the `sdkVersion` policy (it is the oldest of the four and Expo
-has been steering away from it), switch to `appVersion` and use the
-development build above. That is a one-line change to `app.json`.
+**Note on the slug.** `expo.slug` is `pulse`, not `pulse-events`, because it
+has to match the slug of EAS project `5289f214…`; `eas update` refuses to run
+on a mismatch. The Cloudflare Worker (`pulse-events-api`) and the D1 database
+(`pulse-events`) are unrelated names and keep theirs.
 
-Also unverified: that this repo's slug (`pulse-events`) matches the slug of
-project `5289f214…` on Expo's side. A mismatch makes `eas update` fail with a
-slug error; the fix is to align the `slug` field.
+**Still unverified:** whether an update published under the `sdkVersion`
+policy actually opens in Expo Go — that needs a device, and there is none in
+the environment this was built in. If it does not, install the development
+build above; every published update lands there over the air.
 
 The classic `expo publish`, which put a JS bundle in Expo Go behind a
 permanent URL with none of this ceremony, was removed in SDK 50 and has no
