@@ -49,13 +49,37 @@ jobs:
       - name: Core parity tests
         run: npm test
 
+      # `developmentClient: true` requires expo-dev-client to be a dependency;
+      # without it `eas build` bails after setup, which is a slow way to learn
+      # about a one-line problem.
+      - name: Check the development profile's dependencies
+        run: |
+          node -e "
+            const fs = require('fs');
+            const eas = JSON.parse(
+              fs.readFileSync('eas.json', 'utf8').replace(/^\s*\/\/.*\$/gm, ''),
+            );
+            const pkg = require('./package.json');
+            const profile = eas.build?.development ?? {};
+            if (profile.developmentClient && !pkg.dependencies?.['expo-dev-client']) {
+              console.error(
+                'eas.json sets developmentClient: true but expo-dev-client is not a dependency.\n' +
+                'Run: npx expo install expo-dev-client',
+              );
+              process.exit(1);
+            }
+            console.log('development profile OK');
+          "
+
   build:
     name: EAS build and release
     needs: gate
     runs-on: ubuntu-latest
-    # An Android build on EAS routinely takes 15-30 minutes in the queue plus
-    # the build itself.
-    timeout-minutes: 90
+    # The free EAS tier queued a build past 90 minutes on the first run, so
+    # this is set near GitHub's 6-hour ceiling. Actions minutes are free on
+    # public repositories, and the build URL is commented on the pull request
+    # long before this bound matters.
+    timeout-minutes: 350
     # Secrets are not exposed to pull requests from forks.
     if: >-
       github.event_name != 'pull_request' ||
@@ -103,22 +127,106 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      # `--wait` blocks until the build finishes; `--json` makes the result
-      # machine-readable. Without an existing Android keystore EAS generates
-      # one, which older CLIs refused to do non-interactively — if this step
-      # fails on credentials, run `eas credentials -p android` once locally.
-      - name: Build APK on EAS
+      # Submitting and waiting are deliberately separate steps.
+      #
+      # `eas build --wait` holds the runner for the whole queue, and on the
+      # free tier that queue ran past 90 minutes with nothing reported — the
+      # job was killed and the finished build was never collected. Submitting
+      # with `--no-wait` gets the build URL onto the pull request within a
+      # couple of minutes, so the link survives even if the wait later gives
+      # up.
+      #
+      # If a build for this exact commit is already in flight (a re-run, or a
+      # retried job), attach to it rather than paying for another one.
+      - name: Submit the build to EAS
+        id: submit
         if: steps.preflight.outputs.ready == 'true'
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -o pipefail
-          eas build \
+
+          eas build:list \
             --platform android \
-            --profile development \
+            --limit 30 \
             --non-interactive \
-            --wait \
-            --json > build.json
-          echo "--- eas build result ---"
-          cat build.json
+            --json > existing.json 2>/dev/null || echo '[]' > existing.json
+
+          existing=$(node -e "
+            const list = JSON.parse(require('fs').readFileSync('existing.json', 'utf8'));
+            const live = new Set(['NEW', 'IN_QUEUE', 'IN_PROGRESS']);
+            const match = (Array.isArray(list) ? list : []).find(
+              (b) => b?.gitCommitHash === process.env.HEAD_SHA && live.has(b?.status),
+            );
+            console.log(match ? match.id : '');
+          ")
+
+          if [ -n "$existing" ]; then
+            echo "Reusing in-flight build ${existing} for ${HEAD_SHA}"
+            id="$existing"
+          else
+            eas build \
+              --platform android \
+              --profile development \
+              --non-interactive \
+              --no-wait \
+              --json > submit.json
+            cat submit.json
+            id=$(node -e "
+              const out = JSON.parse(require('fs').readFileSync('submit.json', 'utf8'));
+              const build = Array.isArray(out) ? out[0] : out;
+              if (!build?.id) { console.error('no build id in submit output'); process.exit(1); }
+              console.log(build.id);
+            ")
+          fi
+
+          echo "id=${id}" >> "$GITHUB_OUTPUT"
+          echo "url=https://expo.dev/builds/${id}" >> "$GITHUB_OUTPUT"
+
+      # Posted before the wait, so the link exists no matter how long the
+      # queue is or whether this job survives it.
+      - name: Comment that the build is queued
+        if: steps.preflight.outputs.ready == 'true' && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BUILD_URL: ${{ steps.submit.outputs.url }}
+        run: |
+          {
+            printf '⏳ **Android dev build queued** — [watch it on EAS](%s).\n\n' "$BUILD_URL"
+            printf 'The APK will be attached to a prerelease here when it finishes.\n'
+          } > queued.md
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file queued.md
+
+      # Polls instead of `--wait` so progress is visible in the log; the job's
+      # timeout is the real bound.
+      - name: Wait for the build to finish
+        if: steps.preflight.outputs.ready == 'true'
+        env:
+          BUILD_ID: ${{ steps.submit.outputs.id }}
+        run: |
+          for attempt in $(seq 1 330); do
+            eas build:view "$BUILD_ID" --json > build.json 2>/dev/null || true
+            status=$(node -e "
+              try {
+                const b = JSON.parse(require('fs').readFileSync('build.json', 'utf8'));
+                console.log((Array.isArray(b) ? b[0] : b)?.status ?? 'UNKNOWN');
+              } catch { console.log('UNKNOWN'); }
+            ")
+            echo "[${attempt}] ${BUILD_ID} -> ${status}"
+            case "$status" in
+              FINISHED)
+                exit 0
+                ;;
+              ERRORED|CANCELED)
+                echo "::error title=EAS build ${status}::See https://expo.dev/builds/${BUILD_ID}"
+                exit 1
+                ;;
+            esac
+            sleep 60
+          done
+          echo "::error title=Timed out::Build still unfinished; see https://expo.dev/builds/${BUILD_ID}"
+          exit 1
 
       - name: Download the APK
         id: apk
@@ -126,8 +234,8 @@ jobs:
         env:
           PR_NUMBER: ${{ github.event.pull_request.number || github.run_number }}
         run: |
-          # `eas build --json` returns an array of builds; the archive key has
-          # changed name across CLI versions, so accept either.
+          # The archive key has been renamed across CLI versions, so accept
+          # either spelling.
           url=$(node -e "
             const builds = JSON.parse(require('fs').readFileSync('build.json', 'utf8'));
             const build = Array.isArray(builds) ? builds[0] : builds;

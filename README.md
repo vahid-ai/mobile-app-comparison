@@ -14,6 +14,13 @@ mock, the same six events, the same five screens, the same reducer semantics
 and the same `#ff5a2b` accent — so what differs between the directories is the
 stack, not the product.
 
+## Branches
+
+| Branch | Purpose |
+| --- | --- |
+| `main` | Both implementations. Pull requests here publish an EAS Update with a QR-code preview. |
+| `android` | Android work. Pull requests **into** this branch build a development APK on EAS and attach it to a prerelease — see [the workflow](.github/workflows/android-dev-build.yml). |
+
 The React Native tree keeps the Zig core's architecture intact: `update` is
 still pure and exhaustively switched, and a suite of parity tests asserts the
 Zig core's behaviour against the TypeScript port. What the Cloudflare backend
