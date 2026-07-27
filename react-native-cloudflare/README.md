@@ -136,15 +136,20 @@ every `eas update` the preview workflow publishes — no rebuild needed for JS
 changes. That is the whole point of a development build, and it is the
 guaranteed path if Expo Go will not open an update.
 
-Two things worth knowing before the first run:
+Two things the first runs settled:
 
-- **EAS builds are metered and slow.** Expect 15-30 minutes including queue
-  time, against your plan's monthly build allowance. The `gate` job exists to
-  avoid wasting them.
-- **Android signing.** The first build needs a keystore. EAS generates one on
-  demand, but older CLI versions refused to do that with `--non-interactive`.
-  If the build step fails on credentials, run `npx eas credentials -p android`
-  once locally to create it; every later CI build reuses it.
+- **Android signing is handled.** EAS generated the keystore on demand under
+  `--non-interactive` (`✔ Created keystore`), so there is no manual
+  `eas credentials` step. Later builds reuse it.
+- **The free-tier queue is long.** The first build sat in it for over 90
+  minutes. So the job does not use `eas build --wait`: it submits with
+  `--no-wait`, comments the EAS build URL on the pull request within a couple
+  of minutes, and only then polls for completion. The link is useful even if
+  the wait is later abandoned, and the job's own bound is 350 minutes
+  (Actions minutes are free on public repositories).
+
+  If a build for the same commit is already in flight — a re-run, or a
+  retried job — the workflow attaches to it instead of paying for another.
 
 ### Why `sdkVersion` and not `appVersion`
 
